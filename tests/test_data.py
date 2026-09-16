@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from src.data import load_all, normalize, save_dataset
+from src.data import load_all, normalize, normalize_target, save_dataset
 
 
 def test_finance_normalizes_week_numbers_and_duplicates():
@@ -64,3 +64,26 @@ def test_save_append_and_load(tmp_path):
     assert len(frames["sessions"]) == 1
     assert frames["sessions"].iloc[0]["sessions"] == 12
     assert manifest["sessions"]["filename"] == "second.csv"
+
+
+def test_original_planning_export_normalizes_as_target():
+    source = pd.DataFrame(
+        {
+            "3. Country Lookup": ["Brazil", "Mexico", "United States"],
+            "Metric": ["Gross Bookings", "Trips", "Trips"],
+            "2026-01": ["1,234.50", "100", "999"],
+            "2026-02": ["(50.00)", "110", "999"],
+            "2026-Q1": ["0", "0", "0"],
+        }
+    )
+    target = normalize_target(source)
+    assert len(target) == 4
+    assert set(target["country_name"]) == {"Brazil", "Mexico"}
+    assert target.loc[
+        (target["country_name"] == "Brazil") & (target["period"] == pd.Timestamp("2026-01-01")),
+        "target",
+    ].iloc[0] == 1234.5
+    assert target.loc[
+        (target["country_name"] == "Brazil") & (target["period"] == pd.Timestamp("2026-02-01")),
+        "target",
+    ].iloc[0] == -50

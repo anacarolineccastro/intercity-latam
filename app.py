@@ -7,7 +7,16 @@ import pandas as pd
 import streamlit as st
 
 from src.charts import funnel, metric_trend, netr_waterfall, route_bar, weekly_line
-from src.data import DATASETS, load_all, load_forecast, normalize, read_upload, save_dataset
+from src.data import (
+    DATASETS,
+    load_all,
+    load_forecast,
+    normalize,
+    normalize_target,
+    read_upload,
+    save_dataset,
+    save_target,
+)
 from src.metrics import (
     filter_frame,
     finance_summary,
@@ -67,6 +76,25 @@ def show_uploads() -> None:
                 "Last saved": format_uploaded_at(metadata["uploaded_at"]) if metadata.get("uploaded_at") else "—",
             }
         )
+    target_metadata = manifest.get("target_plan", {})
+    status_rows.append(
+        {
+            "Dataset": "Monthly Targets",
+            "Status": "Uploaded" if target_metadata else "Bundled 2026 plan",
+            "File": target_metadata.get("filename", "forecast_plan.csv"),
+            "Rows": target_metadata.get("rows", len(load_forecast(ROOT))),
+            "Weeks": (
+                f"{target_metadata.get('week_min')} to {target_metadata.get('week_max')}"
+                if target_metadata
+                else "2026-01-01 to 2026-12-01"
+            ),
+            "Last saved": (
+                format_uploaded_at(target_metadata["uploaded_at"])
+                if target_metadata.get("uploaded_at")
+                else "Bundled with app"
+            ),
+        }
+    )
     st.dataframe(pd.DataFrame(status_rows), use_container_width=True, hide_index=True)
 
     for message in st.session_state.get("upload_messages", []):
@@ -141,6 +169,57 @@ def show_uploads() -> None:
                 ] + [{"dataset": dataset, "level": "error", "text": text}]
                 st.error(text)
                 st.toast(text, icon="❌")
+
+    with st.expander("Monthly Targets", expanded=False):
+        st.caption(
+            "Upload the Planning export in its original wide format. It must contain a country column, "
+            "a Metric column, and monthly columns such as 2026-01."
+        )
+        bundled = ROOT / "data" / "forecast_plan.csv"
+        st.download_button(
+            "Download current target template",
+            bundled.read_bytes(),
+            bundled.name,
+            "text/csv",
+            key="template-target",
+        )
+        if target_metadata:
+            st.info(
+                f"Current target: **{target_metadata['filename']}**, {target_metadata['rows']:,} values, "
+                f"{target_metadata['week_min']} to {target_metadata['week_max']}."
+            )
+        else:
+            st.info("Using the bundled 2026 plan until you upload a replacement.")
+        target_upload = st.file_uploader(
+            "Upload target data", type=["csv", "xlsx", "xls"], key="upload-target"
+        )
+        if target_upload:
+            file_id = (target_upload.name, target_upload.size)
+            try:
+                target = normalize_target(read_upload(target_upload))
+                st.success(
+                    f"Target accepted: **{target_upload.name}** — {len(target):,} country/metric/month values."
+                )
+                st.dataframe(target.head(30), use_container_width=True, hide_index=True)
+                if st.session_state.get("saved-id-target") != file_id:
+                    metadata = save_target(ROOT, target, target_upload.name)
+                    st.session_state["saved-id-target"] = file_id
+                    text = (
+                        f"Saved monthly targets from {metadata['filename']} "
+                        f"({metadata['week_min']} to {metadata['week_max']})."
+                    )
+                    st.session_state.setdefault("upload_messages", [])
+                    st.session_state["upload_messages"] = [
+                        message
+                        for message in st.session_state["upload_messages"]
+                        if message["dataset"] != "target_plan"
+                    ] + [{"dataset": "target_plan", "level": "success", "text": text}]
+                    st.toast(text, icon="✅")
+                    st.rerun()
+                else:
+                    st.info("This target file is already saved.")
+            except Exception as error:
+                st.error(f"Target data was not saved: {error}")
 
 
 @st.cache_data(show_spinner=False)
@@ -302,47 +381,66 @@ if page == "Overview":
             f"latam_intercity_{frequency.lower()}_{dimension.lower()}_metrics.csv",
         )
 
-    st.subheader("Monthly actual vs 2026 plan")
+    st.subheader("Monthly actual vs target")
     country_monthly = marketplace_metrics(filtered, "Month", "Country")
-    plan_mapping = {
+    target_mapping = {
         "Trips": "trips",
         "Gross Bookings": "gb_usd",
         "NETR": "NETR_usd",
         "VC": "vc_usd",
     }
-    plan_metric = st.selectbox("Plan metric", list(plan_mapping), key="plan-metric")
-    actual_column = plan_mapping[plan_metric]
-    forecast = load_forecast(ROOT)
-    forecast = forecast[
-        (forecast["metric"] == plan_metric)
-        & (forecast["country_name"].isin(countries))
-        & (forecast["period"].between(start.to_period("M").to_timestamp(), end.to_period("M").to_timestamp()))
+    target_metric = st.selectbox("Target metric", list(target_mapping), key="target-metric")
+    actual_column = target_mapping[target_metric]
+    target_data = load_forecast(ROOT)
+    target_data = target_data[
+        (target_data["metric"] == target_metric)
+        & (target_data["country_name"].isin(countries))
+        & (target_data["period"].between(start.to_period("M").to_timestamp(), end.to_period("M").to_timestamp()))
     ]
     if not country_monthly.empty and actual_column in country_monthly:
         actual = country_monthly[["period", "country_name", actual_column]].rename(columns={actual_column: "Actual"})
         comparison = actual.merge(
-            forecast[["period", "country_name", "plan"]].rename(columns={"plan": "Plan"}),
+            target_data[["period", "country_name", "target"]].rename(columns={"target": "Target"}),
             on=["period", "country_name"],
             how="outer",
         )
+        comparison[["Actual", "Target"]] = comparison[["Actual", "Target"]].fillna(0)
         comparison["Attainment"] = comparison.apply(
-            lambda row: safe_ratio(row.get("Actual", 0), row.get("Plan", 0)), axis=1
+            lambda row: safe_ratio(row["Actual"], row["Target"]), axis=1
+        )
+        comparison["Gap"] = comparison["Actual"] - comparison["Target"]
+        comparison["Vs Target"] = comparison.apply(
+            lambda row: safe_ratio(row["Gap"], row["Target"]), axis=1
         )
         comparison_long = comparison.melt(
-            id_vars=["period", "country_name", "Attainment"],
-            value_vars=["Actual", "Plan"],
+            id_vars=["period", "country_name", "Attainment", "Gap", "Vs Target"],
+            value_vars=["Actual", "Target"],
             var_name="Scenario",
-            value_name=plan_metric,
+            value_name=target_metric,
         )
         comparison_long["Line"] = (
             comparison_long["country_name"] + " · " + comparison_long["Scenario"]
         )
+        monthly_total = comparison.groupby("period", as_index=False)[["Actual", "Target"]].sum()
+        monthly_total["Gap"] = monthly_total["Actual"] - monthly_total["Target"]
+        latest = monthly_total.sort_values("period").iloc[-1]
+        latest_vs_target = safe_ratio(latest["Gap"], latest["Target"])
+        cards = st.columns(4)
+        prefix = "" if target_metric == "Trips" else "$"
+        cards[0].metric("Latest month", latest["period"].strftime("%b %Y"))
+        cards[1].metric("Actual", f"{prefix}{latest['Actual']:,.0f}")
+        cards[2].metric("Target", f"{prefix}{latest['Target']:,.0f}")
+        cards[3].metric(
+            "Vs target",
+            f"{latest_vs_target:+.1%}",
+            f"{prefix}{latest['Gap']:+,.0f}",
+        )
         st.plotly_chart(
             metric_trend(
                 comparison_long,
-                plan_metric,
+                target_metric,
                 "Line",
-                f"{plan_metric}: actual vs plan",
+                f"{target_metric}: actual vs target",
             ),
             use_container_width=True,
         )
@@ -350,10 +448,13 @@ if page == "Overview":
             comparison,
             use_container_width=True,
             hide_index=True,
-            column_config={"Attainment": st.column_config.NumberColumn(format="percent")},
+            column_config={
+                "Attainment": st.column_config.NumberColumn(format="percent"),
+                "Vs Target": st.column_config.NumberColumn(format="percent"),
+            },
         )
     else:
-        st.info("Upload Finance data to compare actuals with the plan.")
+        st.info("Upload Finance data to compare actuals with the target.")
     if not finance.empty:
         csv_download(finance, "Download filtered overview data", "latam_intercity_overview.csv")
 

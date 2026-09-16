@@ -25,6 +25,11 @@ streamlit run app.py
    dataset completely.
 7. Save. The app stores normalized parquet files under `data/stored/`.
 
+The **Monthly Targets** uploader on the same page accepts either the bundled
+compact template or the original Planning spreadsheet export containing
+`3. Country Lookup`, `Metric`, and `YYYY-MM` columns. Uploading a target file
+replaces the current target; no manual reformatting is required.
+
 Append mode de-duplicates rows at each dataset's natural weekly grain, keeping
 the newest uploaded version. Upload metadata and date coverage are recorded in
 `data/stored/manifest.json`.
@@ -60,9 +65,10 @@ The NETR bridge uses reported NETR as its total. “Other Revenue /
 Reconciliation” captures all remaining financial lines not separately present
 in the weekly Finance export so that the displayed bridge reconciles exactly.
 
-The bundled 2026 country plan is stored in `data/forecast_plan.csv`. Forecasts
-are country-level and monthly; route-level plan comparisons are therefore not
-shown.
+The bundled 2026 country target is stored in `data/forecast_plan.csv` and is
+used until a replacement is uploaded. Targets are country-level and monthly;
+route-level target comparisons are therefore not shown. The overview reports
+actual, target, absolute gap, attainment, and percentage versus target.
 
 ## Input contracts
 
