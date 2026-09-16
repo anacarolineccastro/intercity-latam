@@ -6,9 +6,18 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src.charts import funnel, route_bar, weekly_line
-from src.data import DATASETS, load_all, normalize, read_upload, save_dataset
-from src.metrics import filter_frame, finance_summary, grouped_weekly, route_summary, safe_ratio, totals
+from src.charts import funnel, metric_trend, netr_waterfall, route_bar, weekly_line
+from src.data import DATASETS, load_all, load_forecast, normalize, read_upload, save_dataset
+from src.metrics import (
+    filter_frame,
+    finance_summary,
+    grouped_weekly,
+    marketplace_metrics,
+    netr_bridge,
+    route_summary,
+    safe_ratio,
+    totals,
+)
 
 ROOT = Path(__file__).parent
 
@@ -144,9 +153,9 @@ with st.sidebar:
     page = st.radio(
         "Page", ["Overview", "Routes", "Finance", "Reserve", "Supply & return", "Data refresh"]
     )
-    _, sidebar_manifest = load_all(ROOT)
-    loaded_names = [name.replace("_", " ").title() for name in DATASETS if name in sidebar_manifest]
-    missing_names = [name.replace("_", " ").title() for name in DATASETS if name not in sidebar_manifest]
+    sidebar_frames, _ = load_all(ROOT)
+    loaded_names = [name.replace("_", " ").title() for name in DATASETS if name in sidebar_frames]
+    missing_names = [name.replace("_", " ").title() for name in DATASETS if name not in sidebar_frames]
     if loaded_names:
         st.caption("Loaded: " + ", ".join(loaded_names))
     if missing_names:
@@ -226,11 +235,7 @@ if page == "Overview":
     for column, (label, value, fmt, delta) in zip(columns, cards):
         column.metric(label, fmt.format(value), f"{delta:+.1%} WoW" if delta is not None else None)
 
-    left, right = st.columns(2)
-    if not finance.empty:
-        left.plotly_chart(weekly_line(weekly, "trips", "Weekly completed trips"), use_container_width=True)
-        right.plotly_chart(weekly_line(weekly, "gb_usd", "Weekly gross bookings"), use_container_width=True)
-
+    st.subheader("Conversion and NETR funnels")
     funnel_values = {}
     if not sessions.empty:
         session_totals = totals(sessions, ["sessions", "shopping_sessions", "requesting_sessions"])
@@ -241,8 +246,114 @@ if page == "Overview":
         })
     if summary:
         funnel_values.update({"Requests": summary["requests"], "Trips": summary["trips"]})
+    left, right = st.columns(2)
     if funnel_values:
-        st.plotly_chart(funnel(funnel_values), use_container_width=True)
+        left.plotly_chart(funnel(funnel_values), use_container_width=True)
+    if not finance.empty:
+        right.plotly_chart(netr_waterfall(netr_bridge(finance)), use_container_width=True)
+        right.caption(
+            "NETR = Gross Bookings − Driver Payments − Taxes & Fees − Existing User Incentives "
+            "+ Other Revenue. The reconciliation line makes the bridge equal reported NETR."
+        )
+
+    st.subheader("Marketplace health")
+    control_a, control_b, control_c = st.columns([1, 1, 2])
+    frequency = control_a.radio("Time grain", ["Week", "Month"], horizontal=True)
+    dimension = control_b.radio("Break down by", ["Country", "Route"], horizontal=True)
+    metric_options = [
+        "trips", "requests", "Rs/S", "C/Rs", "C/S", "C/R", "gb_usd",
+        "Average Fare", "NETR_usd", "NETR Margin", "vc_usd", "VC Margin",
+        "Reserve Reliability", "Return Rate",
+    ]
+    health = marketplace_metrics(filtered, frequency, dimension)
+    available_metrics = [metric for metric in metric_options if metric in health]
+    selected_metric = control_c.selectbox(
+        "Metric",
+        available_metrics,
+        index=available_metrics.index("C/Rs") if "C/Rs" in available_metrics else 0,
+    )
+    breakdown = "country_name" if dimension == "Country" else "routes"
+    if not health.empty and selected_metric:
+        st.plotly_chart(
+            metric_trend(
+                health,
+                selected_metric,
+                breakdown,
+                f"{selected_metric} by {dimension.lower()} and {frequency.lower()}",
+            ),
+            use_container_width=True,
+        )
+        percent_columns = [
+            "Rs/S", "C/Rs", "C/S", "C/R", "NETR Margin", "VC Margin",
+            "Reserve Reliability", "Return Rate",
+        ]
+        st.dataframe(
+            health,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                column: st.column_config.NumberColumn(format="percent")
+                for column in percent_columns if column in health
+            },
+        )
+        csv_download(
+            health,
+            f"Download {frequency.lower()}ly {dimension.lower()} metrics",
+            f"latam_intercity_{frequency.lower()}_{dimension.lower()}_metrics.csv",
+        )
+
+    st.subheader("Monthly actual vs 2026 plan")
+    country_monthly = marketplace_metrics(filtered, "Month", "Country")
+    plan_mapping = {
+        "Trips": "trips",
+        "Gross Bookings": "gb_usd",
+        "NETR": "NETR_usd",
+        "VC": "vc_usd",
+    }
+    plan_metric = st.selectbox("Plan metric", list(plan_mapping), key="plan-metric")
+    actual_column = plan_mapping[plan_metric]
+    forecast = load_forecast(ROOT)
+    forecast = forecast[
+        (forecast["metric"] == plan_metric)
+        & (forecast["country_name"].isin(countries))
+        & (forecast["period"].between(start.to_period("M").to_timestamp(), end.to_period("M").to_timestamp()))
+    ]
+    if not country_monthly.empty and actual_column in country_monthly:
+        actual = country_monthly[["period", "country_name", actual_column]].rename(columns={actual_column: "Actual"})
+        comparison = actual.merge(
+            forecast[["period", "country_name", "plan"]].rename(columns={"plan": "Plan"}),
+            on=["period", "country_name"],
+            how="outer",
+        )
+        comparison["Attainment"] = comparison.apply(
+            lambda row: safe_ratio(row.get("Actual", 0), row.get("Plan", 0)), axis=1
+        )
+        comparison_long = comparison.melt(
+            id_vars=["period", "country_name", "Attainment"],
+            value_vars=["Actual", "Plan"],
+            var_name="Scenario",
+            value_name=plan_metric,
+        )
+        comparison_long["Line"] = (
+            comparison_long["country_name"] + " · " + comparison_long["Scenario"]
+        )
+        st.plotly_chart(
+            metric_trend(
+                comparison_long,
+                plan_metric,
+                "Line",
+                f"{plan_metric}: actual vs plan",
+            ),
+            use_container_width=True,
+        )
+        st.dataframe(
+            comparison,
+            use_container_width=True,
+            hide_index=True,
+            column_config={"Attainment": st.column_config.NumberColumn(format="percent")},
+        )
+    else:
+        st.info("Upload Finance data to compare actuals with the plan.")
     if not finance.empty:
         csv_download(finance, "Download filtered overview data", "latam_intercity_overview.csv")
 

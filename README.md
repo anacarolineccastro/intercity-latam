@@ -32,7 +32,8 @@ the newest uploaded version. Upload metadata and date coverage are recorded in
 ## Pages and metrics
 
 - **Overview:** Requests, trips, conversion, gross bookings, variable
-  contribution, VC margin, weekly trends, and the session-to-trip funnel.
+  contribution, VC margin, rider and NETR funnels, weekly/monthly marketplace
+  health by country or route, and monthly actual-vs-plan.
 - **Routes:** Ranked route volume, conversion, finance, distance, and exports.
 - **Reserve:** Completion, reliability, booking lead time, trends, and details.
 - **Supply & return:** Return rate, time to return, and no-attempt measures.
@@ -40,6 +41,28 @@ the newest uploaded version. Upload metadata and date coverage are recorded in
 All ratio calculations are guarded against zero denominators. Because source
 files are already aggregated, the app sums additive fields and calculates
 ratios only after aggregation.
+
+Marketplace metrics follow the LatAm Marketplace source-of-truth definitions:
+
+- Rs/S = requesting sessions / shopping sessions
+- C/Rs = completed trips / requesting sessions
+- C/S = completed trips / shopping sessions
+- C/R = completed trips / requests
+- Average Fare = Gross Bookings / completed trips
+- NETR Margin = NETR / Gross Bookings
+- VC Margin = Variable Contribution / Gross Bookings
+- Return Rate = return trips / onward trips
+
+Intercity is treated as BTD-only. The dashboard does not attribute performance
+to Rider Surge, Driver Surge, DOP, RSP, or CSP.
+
+The NETR bridge uses reported NETR as its total. “Other Revenue /
+Reconciliation” captures all remaining financial lines not separately present
+in the weekly Finance export so that the displayed bridge reconciles exactly.
+
+The bundled 2026 country plan is stored in `data/forecast_plan.csv`. Forecasts
+are country-level and monthly; route-level plan comparisons are therefore not
+shown.
 
 ## Input contracts
 

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.metrics import filter_frame, finance_summary, safe_ratio
+from src.metrics import filter_frame, finance_summary, marketplace_metrics, netr_bridge, safe_ratio
 
 
 def test_safe_ratio_handles_zero():
@@ -35,3 +35,47 @@ def test_filters_week_country_and_route():
         },
     )
     assert result["routes"].tolist() == ["C <> D"]
+
+
+def test_marketplace_metrics_aggregate_before_joining():
+    finance = pd.DataFrame(
+        {
+            "week_start": pd.to_datetime(["2026-09-07", "2026-09-07"]),
+            "country_name": ["Brazil", "Brazil"],
+            "routes": ["A <> B", "C <> D"],
+            "requests": [80, 20],
+            "trips": [60, 10],
+            "gb_usd": [600, 100],
+            "NETR_usd": [120, 20],
+            "vc_usd": [90, 10],
+        }
+    )
+    sessions = pd.DataFrame(
+        {
+            "week_start": pd.to_datetime(["2026-09-07", "2026-09-07"]),
+            "country_name": ["Brazil", "Brazil"],
+            "routes": ["A <> B", "C <> D"],
+            "sessions": [120, 40],
+            "shopping_sessions": [100, 20],
+            "requesting_sessions": [75, 15],
+        }
+    )
+    result = marketplace_metrics({"finance": finance, "sessions": sessions}, "Week", "Country")
+    assert len(result) == 1
+    assert result.iloc[0]["trips"] == 70
+    assert result.iloc[0]["C/Rs"] == 70 / 90
+    assert result.iloc[0]["Rs/S"] == 90 / 120
+
+
+def test_netr_bridge_reconciles_to_reported_netr():
+    finance = pd.DataFrame(
+        {
+            "gb_usd": [1000],
+            "driver_payment_usd": [700],
+            "taxes_and_fees_disbursed_usd": [50],
+            "existing_rider_incentives_overall_local": [20],
+            "NETR_usd": [200],
+        }
+    )
+    bridge = netr_bridge(finance)
+    assert sum(value for key, value in bridge.items() if key != "NETR") == bridge["NETR"]

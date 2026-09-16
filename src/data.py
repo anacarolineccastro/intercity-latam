@@ -116,3 +116,18 @@ def load_all(root: Path) -> tuple[dict[str, pd.DataFrame], dict]:
     manifest_path = directory / "manifest.json"
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     return frames, manifest
+
+
+def load_forecast(root: Path) -> pd.DataFrame:
+    """Load the country-level monthly Intercity plan in tidy form."""
+    source = pd.read_csv(root / "data" / "forecast_plan.csv")
+    month_columns = [column for column in source if column[:4].isdigit()]
+    forecast = source.melt(
+        id_vars=["country_name", "metric"],
+        value_vars=month_columns,
+        var_name="period",
+        value_name="plan",
+    )
+    forecast["period"] = pd.to_datetime(forecast["period"], format="%Y-%m")
+    forecast["plan"] = pd.to_numeric(forecast["plan"], errors="coerce").fillna(0)
+    return forecast
