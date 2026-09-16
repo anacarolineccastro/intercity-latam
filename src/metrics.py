@@ -99,6 +99,15 @@ def marketplace_metrics(frames: dict[str, pd.DataFrame], frequency: str, dimensi
     return merged.sort_values(join_keys)
 
 
+def allocate_targets(monthly: pd.DataFrame, frequency: str) -> pd.DataFrame:
+    """Weekly target is the monthly target divided evenly across 4 weeks."""
+    allocated = monthly.copy()
+    if frequency == "Week":
+        allocated["target"] = allocated["target"] / 4.0
+        allocated = allocated.rename(columns={"period": "month"})
+    return allocated
+
+
 def netr_bridge(frame: pd.DataFrame) -> dict[str, float]:
     values = totals(
         frame,

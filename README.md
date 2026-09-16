@@ -66,8 +66,9 @@ and existing user incentives. Remaining P&L lines are omitted from the chart.
 
 The bundled 2026 country target is stored in `data/forecast_plan.csv` and is
 used until a replacement is uploaded. Targets are country-level and monthly;
-route-level target comparisons are therefore not shown. The overview reports
-actual, target, absolute gap, attainment, and percentage versus target.
+route-level target comparisons are therefore not shown. Weekly targets are the
+monthly target divided by 4 and assigned to each week in that month. The overview
+reports actual, target, absolute gap, attainment, and percentage versus target.
 
 ## Input contracts
 

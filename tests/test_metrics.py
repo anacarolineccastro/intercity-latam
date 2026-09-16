@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.metrics import filter_frame, finance_summary, marketplace_metrics, netr_bridge, safe_ratio
+from src.metrics import allocate_targets, filter_frame, finance_summary, marketplace_metrics, netr_bridge, safe_ratio
 
 
 def test_safe_ratio_handles_zero():
@@ -86,3 +86,19 @@ def test_netr_bridge_omits_reconciliation():
         "Existing User Incentives",
         "NETR",
     ]
+
+
+def test_weekly_target_is_monthly_divided_by_four():
+    monthly = pd.DataFrame(
+        {
+            "country_name": ["Brazil"],
+            "metric": ["Trips"],
+            "period": [pd.Timestamp("2026-09-01")],
+            "target": [400.0],
+        }
+    )
+    weekly = allocate_targets(monthly, "Week")
+    assert weekly.iloc[0]["target"] == 100.0
+    assert "month" in weekly
+    unchanged = allocate_targets(monthly, "Month")
+    assert unchanged.iloc[0]["target"] == 400.0

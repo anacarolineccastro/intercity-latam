@@ -24,6 +24,7 @@ from src.metrics import (
     grouped_weekly,
     marketplace_metrics,
     netr_bridge,
+    allocate_targets,
     route_summary,
     safe_ratio,
     totals,
@@ -438,8 +439,9 @@ if page == "Overview":
             f"latam_intercity_{frequency.lower()}_{dimension.lower()}_metrics.csv",
         )
 
-    st.subheader("Monthly actual vs target")
-    country_monthly = marketplace_metrics(filtered, "Month", "Country")
+    st.subheader("Actual vs target")
+    st.caption("Weekly target = monthly target ÷ 4. Monthly target is used as uploaded.")
+    country_actuals = marketplace_metrics(filtered, frequency, "Country")
     target_mapping = {
         "Trips": "trips",
         "Gross Bookings": "gb_usd",
@@ -448,19 +450,40 @@ if page == "Overview":
     }
     target_metric = st.selectbox("Target metric", list(target_mapping), key="target-metric")
     actual_column = target_mapping[target_metric]
-    target_data = load_forecast(ROOT)
-    target_data = target_data[
-        (target_data["metric"] == target_metric)
-        & (target_data["country_name"].isin(countries))
-        & (target_data["period"].between(start.to_period("M").to_timestamp(), end.to_period("M").to_timestamp()))
-    ]
-    if not country_monthly.empty and actual_column in country_monthly:
-        actual = country_monthly[["period", "country_name", actual_column]].rename(columns={actual_column: "Actual"})
-        comparison = actual.merge(
-            target_data[["period", "country_name", "target"]].rename(columns={"target": "Target"}),
-            on=["period", "country_name"],
-            how="outer",
+    target_data = allocate_targets(load_forecast(ROOT), frequency)
+    target_data = target_data[target_data["metric"] == target_metric]
+    target_data = target_data[target_data["country_name"].isin(countries)]
+    if frequency == "Week":
+        target_data = target_data[
+            target_data["month"].between(
+                start.to_period("M").to_timestamp(),
+                end.to_period("M").to_timestamp(),
+            )
+        ]
+    else:
+        target_data = target_data[
+            target_data["period"].between(
+                start.to_period("M").to_timestamp(),
+                end.to_period("M").to_timestamp(),
+            )
+        ]
+    if not country_actuals.empty and actual_column in country_actuals:
+        actual = country_actuals[["period", "country_name", actual_column]].rename(
+            columns={actual_column: "Actual"}
         )
+        if frequency == "Week":
+            actual["month"] = pd.to_datetime(actual["period"]).dt.to_period("M").dt.to_timestamp()
+            comparison = actual.merge(
+                target_data[["month", "country_name", "target"]].rename(columns={"target": "Target"}),
+                on=["month", "country_name"],
+                how="left",
+            )
+        else:
+            comparison = actual.merge(
+                target_data[["period", "country_name", "target"]].rename(columns={"target": "Target"}),
+                on=["period", "country_name"],
+                how="outer",
+            )
         comparison[["Actual", "Target"]] = comparison[["Actual", "Target"]].fillna(0)
         comparison["Attainment"] = comparison.apply(
             lambda row: safe_ratio(row["Actual"], row["Target"]), axis=1
@@ -484,7 +507,10 @@ if page == "Overview":
         latest_vs_target = safe_ratio(latest["Gap"], latest["Target"])
         cards = st.columns(4)
         prefix = "" if target_metric == "Trips" else "$"
-        cards[0].metric("Latest month", latest["period"].strftime("%b %Y"))
+        cards[0].metric(
+            "Latest week" if frequency == "Week" else "Latest month",
+            latest["period"].strftime("%d %b %Y") if frequency == "Week" else latest["period"].strftime("%b %Y"),
+        )
         cards[1].metric("Actual", f"{prefix}{latest['Actual']:,.0f}")
         cards[2].metric("Target", f"{prefix}{latest['Target']:,.0f}")
         cards[3].metric(
@@ -497,7 +523,7 @@ if page == "Overview":
                 comparison_long,
                 target_metric,
                 "Line",
-                f"{target_metric}: actual vs target",
+                f"{target_metric}: actual vs target ({frequency.lower()})",
             ),
             use_container_width=True,
         )
