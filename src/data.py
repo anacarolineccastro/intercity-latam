@@ -87,18 +87,23 @@ def save_dataset(root: Path, dataset: str, frame: pd.DataFrame, filename: str, m
         existing = pd.read_parquet(destination)
         frame = pd.concat([existing, frame], ignore_index=True)
         frame, _ = normalize(dataset, frame)
-    frame.to_parquet(destination, index=False)
-
-    manifest_path = directory / "manifest.json"
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
-    manifest[dataset] = {
-        "filename": filename,
-        "uploaded_at": datetime.now(timezone.utc).isoformat(),
-        "rows": len(frame),
-        "week_min": str(frame["week_start"].min().date()),
-        "week_max": str(frame["week_start"].max().date()),
-    }
-    manifest_path.write_text(json.dumps(manifest, indent=2))
+    try:
+        frame.to_parquet(destination, index=False)
+        manifest_path = directory / "manifest.json"
+        manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+        manifest[dataset] = {
+            "filename": filename,
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "rows": len(frame),
+            "week_min": str(frame["week_start"].min().date()),
+            "week_max": str(frame["week_start"].max().date()),
+        }
+        manifest_path.write_text(json.dumps(manifest, indent=2))
+    except OSError as error:
+        raise OSError(
+            f"Could not write {dataset} to disk ({error}). "
+            "On Streamlit Cloud the filesystem can be read-only or reset after reboot."
+        ) from error
     return manifest[dataset]
 
 

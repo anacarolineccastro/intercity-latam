@@ -28,11 +28,47 @@ def latest_delta(weekly: pd.DataFrame, column: str) -> float | None:
     return safe_ratio(current - previous, previous) if previous else None
 
 
+def format_uploaded_at(value: str) -> str:
+    stamp = pd.to_datetime(value, utc=True, errors="coerce")
+    if pd.isna(stamp):
+        return value
+    return stamp.tz_convert("UTC").strftime("%Y-%m-%d %H:%M UTC")
+
+
 def show_uploads() -> None:
     st.subheader("Weekly data refresh")
-    st.caption("Upload the four query exports as CSV or XLSX. Validate first, then append or replace stored data.")
+    st.caption("Choose a CSV or XLSX export. The app validates and saves it immediately, then shows whether it loaded.")
+    frames, manifest = load_all(ROOT)
+
+    status_rows = []
+    for dataset in DATASETS:
+        metadata = manifest.get(dataset, {})
+        loaded = dataset in frames
+        status_rows.append(
+            {
+                "Dataset": dataset.replace("_", " ").title(),
+                "Status": "Loaded" if loaded else "Not loaded",
+                "File": metadata.get("filename", "—"),
+                "Rows": metadata.get("rows", 0) if loaded else 0,
+                "Weeks": (
+                    f"{metadata.get('week_min')} to {metadata.get('week_max')}"
+                    if loaded and metadata.get("week_min")
+                    else "—"
+                ),
+                "Last saved": format_uploaded_at(metadata["uploaded_at"]) if metadata.get("uploaded_at") else "—",
+            }
+        )
+    st.dataframe(pd.DataFrame(status_rows), use_container_width=True, hide_index=True)
+
+    for message in st.session_state.get("upload_messages", []):
+        if message["level"] == "success":
+            st.success(message["text"])
+        else:
+            st.error(message["text"])
+
     for dataset, config in DATASETS.items():
-        with st.expander(dataset.replace("_", " ").title()):
+        loaded = dataset in frames
+        with st.expander(dataset.replace("_", " ").title(), expanded=not loaded):
             template = ROOT / "data" / "templates" / f"{dataset}_template.csv"
             st.download_button(
                 "Download template",
@@ -42,29 +78,60 @@ def show_uploads() -> None:
                 key=f"template-{dataset}",
             )
             st.caption("Required: " + ", ".join(config["required"]))
+            if loaded:
+                metadata = manifest[dataset]
+                st.info(
+                    f"Currently loaded: {metadata['rows']:,} rows from **{metadata['filename']}** "
+                    f"({metadata['week_min']} to {metadata['week_max']})."
+                )
+            else:
+                st.warning("No saved file yet for this dataset.")
             upload = st.file_uploader(
                 f"Upload {dataset}", type=["csv", "xlsx", "xls"], key=f"upload-{dataset}"
             )
             mode = st.radio(
                 "Save mode", ["append", "replace"], horizontal=True, key=f"mode-{dataset}"
             )
-            if upload:
-                try:
+            if not upload:
+                continue
+            file_id = (upload.name, upload.size)
+            already_saved = st.session_state.get(f"saved-id-{dataset}") == file_id
+            try:
+                with st.spinner(f"Reading {upload.name}..."):
                     normalized, warnings = normalize(dataset, read_upload(upload))
-                    st.success(
-                        f"Valid: {len(normalized):,} rows, "
-                        f"{normalized.week_start.min():%Y-%m-%d} to {normalized.week_start.max():%Y-%m-%d}"
-                    )
-                    for warning in warnings:
-                        st.warning(warning)
-                    st.dataframe(normalized.head(20), use_container_width=True, hide_index=True)
-                    if st.button(f"Save {dataset}", key=f"save-{dataset}"):
-                        metadata = save_dataset(ROOT, dataset, normalized, upload.name, mode)
-                        st.cache_data.clear()
-                        st.success(f"Saved {metadata['rows']:,} rows.")
-                        st.rerun()
-                except Exception as error:
-                    st.error(str(error))
+                st.success(
+                    f"File accepted: **{upload.name}** — {len(normalized):,} rows, "
+                    f"{normalized.week_start.min():%Y-%m-%d} to {normalized.week_start.max():%Y-%m-%d}."
+                )
+                for warning in warnings:
+                    st.warning(warning)
+                st.dataframe(normalized.head(20), use_container_width=True, hide_index=True)
+                if already_saved:
+                    st.info("This file is already saved.")
+                    continue
+                with st.spinner(f"Saving {dataset.replace('_', ' ')}..."):
+                    metadata = save_dataset(ROOT, dataset, normalized, upload.name, mode)
+                st.cache_data.clear()
+                text = (
+                    f"Saved {dataset.replace('_', ' ')}: {metadata['rows']:,} rows from {metadata['filename']} "
+                    f"({metadata['week_min']} to {metadata['week_max']})."
+                )
+                st.session_state[f"saved-id-{dataset}"] = file_id
+                st.session_state.setdefault("upload_messages", [])
+                st.session_state["upload_messages"] = [
+                    message for message in st.session_state["upload_messages"] if message["dataset"] != dataset
+                ] + [{"dataset": dataset, "level": "success", "text": text}]
+                st.toast(text, icon="✅")
+                st.rerun()
+            except Exception as error:
+                text = f"{dataset.replace('_', ' ').title()} was not saved: {error}"
+                st.session_state[f"saved-id-{dataset}"] = None
+                st.session_state.setdefault("upload_messages", [])
+                st.session_state["upload_messages"] = [
+                    message for message in st.session_state["upload_messages"] if message["dataset"] != dataset
+                ] + [{"dataset": dataset, "level": "error", "text": text}]
+                st.error(text)
+                st.toast(text, icon="❌")
 
 
 @st.cache_data(show_spinner=False)
@@ -77,6 +144,13 @@ with st.sidebar:
     page = st.radio(
         "Page", ["Overview", "Routes", "Finance", "Reserve", "Supply & return", "Data refresh"]
     )
+    _, sidebar_manifest = load_all(ROOT)
+    loaded_names = [name.replace("_", " ").title() for name in DATASETS if name in sidebar_manifest]
+    missing_names = [name.replace("_", " ").title() for name in DATASETS if name not in sidebar_manifest]
+    if loaded_names:
+        st.caption("Loaded: " + ", ".join(loaded_names))
+    if missing_names:
+        st.caption("Missing: " + ", ".join(missing_names))
 
 if page == "Data refresh":
     show_uploads()
