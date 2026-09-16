@@ -107,18 +107,11 @@ def netr_bridge(frame: pd.DataFrame) -> dict[str, float]:
             "existing_rider_incentives_overall_local", "NETR_usd",
         ],
     )
-    known_costs = (
-        values["driver_payment_usd"]
-        + values["taxes_and_fees_disbursed_usd"]
-        + values["existing_rider_incentives_overall_local"]
-    )
-    other_revenue = values["NETR_usd"] - values["gb_usd"] + known_costs
     return {
         "Gross Bookings": values["gb_usd"],
         "Driver Payments": -values["driver_payment_usd"],
         "Taxes & Fees": -values["taxes_and_fees_disbursed_usd"],
         "Existing User Incentives": -values["existing_rider_incentives_overall_local"],
-        "Other Revenue / Reconciliation": other_revenue,
         "NETR": values["NETR_usd"],
     }
 

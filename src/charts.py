@@ -45,7 +45,7 @@ def metric_trend(frame: pd.DataFrame, metric: str, color: str, title: str):
 def netr_waterfall(values: dict[str, float]):
     labels = list(values)
     amounts = list(values.values())
-    measures = ["absolute", "relative", "relative", "relative", "relative", "total"]
+    measures = ["absolute", "relative", "relative", "relative", "total"]
     figure = go.Figure(
         go.Waterfall(
             orientation="v",

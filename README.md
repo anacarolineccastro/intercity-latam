@@ -61,9 +61,8 @@ Marketplace metrics follow the LatAm Marketplace source-of-truth definitions:
 Intercity is treated as BTD-only. The dashboard does not attribute performance
 to Rider Surge, Driver Surge, DOP, RSP, or CSP.
 
-The NETR bridge uses reported NETR as its total. “Other Revenue /
-Reconciliation” captures all remaining financial lines not separately present
-in the weekly Finance export so that the displayed bridge reconciles exactly.
+The NETR waterfall is Gross Bookings minus driver payments, taxes and fees,
+and existing user incentives. Remaining P&L lines are omitted from the chart.
 
 The bundled 2026 country target is stored in `data/forecast_plan.csv` and is
 used until a replacement is uploaded. Targets are country-level and monthly;

@@ -67,7 +67,7 @@ def test_marketplace_metrics_aggregate_before_joining():
     assert result.iloc[0]["Rs/S"] == 90 / 120
 
 
-def test_netr_bridge_reconciles_to_reported_netr():
+def test_netr_bridge_omits_reconciliation():
     finance = pd.DataFrame(
         {
             "gb_usd": [1000],
@@ -78,4 +78,11 @@ def test_netr_bridge_reconciles_to_reported_netr():
         }
     )
     bridge = netr_bridge(finance)
-    assert sum(value for key, value in bridge.items() if key != "NETR") == bridge["NETR"]
+    assert "Other Revenue / Reconciliation" not in bridge
+    assert list(bridge) == [
+        "Gross Bookings",
+        "Driver Payments",
+        "Taxes & Fees",
+        "Existing User Incentives",
+        "NETR",
+    ]

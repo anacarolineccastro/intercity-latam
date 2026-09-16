@@ -88,7 +88,7 @@ def netr_waterfall(values: dict[str, float]):
     figure = go.Figure(
         go.Waterfall(
             orientation="v",
-            measure=["absolute", "relative", "relative", "relative", "relative", "total"],
+            measure=["absolute", "relative", "relative", "relative", "total"],
             x=labels,
             y=amounts,
             connector={"line": {"color": "#7A7A7A"}},
@@ -389,8 +389,7 @@ if page == "Overview":
     if not finance.empty:
         right.plotly_chart(netr_waterfall(netr_bridge(finance)), use_container_width=True)
         right.caption(
-            "NETR = Gross Bookings − Driver Payments − Taxes & Fees − Existing User Incentives "
-            "+ Other Revenue. The reconciliation line makes the bridge equal reported NETR."
+            "NETR = Gross Bookings − Driver Payments − Taxes & Fees − Existing User Incentives."
         )
 
     st.subheader("Marketplace health")
