@@ -1,0 +1,2 @@
+Timeperiod,country_name,routes,car_type,airport_type,taxonomy,requests,relevant_requests,completed_trips,reliable_requests,time_to_book_min
+2026-09-14,Brazil,Sao Paulo <> Campinas,UberX Intercity,Non-Airport,UDA,20,18,15,16,7200
