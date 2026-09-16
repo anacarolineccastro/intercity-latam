@@ -1,4 +1,4 @@
-"""Small, consistent Plotly chart constructors."""
+"""Optional Plotly helpers. The live app inlines these in app.py to avoid Cloud import cache issues."""
 from __future__ import annotations
 
 import plotly.express as px
