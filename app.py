@@ -26,6 +26,7 @@ from src.metrics import (
     netr_bridge,
     allocate_targets,
     experiment_metrics,
+    IGBS_TARGET,
     promo_metrics,
     route_summary,
     safe_ratio,
@@ -292,7 +293,7 @@ with st.sidebar:
     st.header("Navigation")
     page = st.radio(
         "Page",
-        ["Overview", "Experiment & iGBs", "Routes", "Finance", "Reserve", "Supply & return", "Data refresh"],
+        ["Overview", "Experiment & IGBS", "Routes", "Finance", "Reserve", "Supply & return", "Data refresh"],
     )
     sidebar_frames, _ = load_all(ROOT)
     loaded_names = [name.replace("_", " ").title() for name in DATASETS if name in sidebar_frames]
@@ -546,14 +547,16 @@ if page == "Overview":
     if not finance.empty:
         csv_download(finance, "Download filtered overview data", "latam_intercity_overview.csv")
 
-elif page == "Experiment & iGBs":
+elif page == "Experiment & IGBS":
     st.subheader("Intercity experiment incrementality")
     st.caption(
-        "The Bullseye workflow assigns 90% Treatment and 10% Control. "
-        "iGBs = Treatment Gross Bookings − (9 × Control Gross Bookings)."
+        "IGBS = Incremental Gross Bookings ÷ Incremental Spend. The Bullseye workflow assigns "
+        "90% Treatment and 10% Control, so Control is scaled by 9 before comparison. "
+        "IGBS is only reported when the treatment fare is lower by more than $0.50 per trip. "
+        f"Target: {IGBS_TARGET:.2f}."
     )
     if experiment.empty:
-        st.info("Upload the **Experiment** cohort Finance export in Data refresh to calculate iGBs.")
+        st.info("Upload the **Experiment** cohort Finance export in Data refresh to calculate IGBS.")
     elif not {"Treatment", "Control"}.issubset(
         set(experiment["cohort"].astype(str).str.strip().str.title())
     ):
@@ -571,40 +574,52 @@ elif page == "Experiment & iGBs":
         )
         latest_period = incrementality["period"].max()
         latest_rows = incrementality[incrementality["period"] == latest_period]
-        treatment_gb = latest_rows["gb_usd_treatment"].sum()
-        scaled_control_gb = latest_rows["control_gb_scaled"].sum()
-        incremental_gb = latest_rows["iGBs"].sum()
-        uplift = safe_ratio(incremental_gb, scaled_control_gb)
-
-        campaign = promo_metrics(promo_redemption, experiment_frequency)
-        latest_redeemed = (
-            campaign.loc[campaign["period"] == latest_period, "redeemed_usd"].sum()
-            if not campaign.empty
-            else 0
+        incremental_trips = latest_rows["incremental_trips"].sum()
+        incremental_gb = latest_rows["incremental_gb"].sum()
+        incremental_spend = latest_rows["incremental_spend"].sum()
+        valid_rows = latest_rows[latest_rows["is_valid_fare_cut"]]
+        igbs = (
+            safe_ratio(valid_rows["incremental_gb"].sum(), valid_rows["incremental_spend"].sum())
+            if not valid_rows.empty
+            else None
         )
-        cards = st.columns(6)
+
+        cards = st.columns(5)
         cards[0].metric(
             "Latest period",
             latest_period.strftime("%d %b %Y")
             if experiment_frequency == "Week"
             else latest_period.strftime("%b %Y"),
         )
-        cards[1].metric("Treatment GB", f"${treatment_gb:,.0f}")
-        cards[2].metric("9× Control GB", f"${scaled_control_gb:,.0f}")
-        cards[3].metric("iGBs", f"${incremental_gb:,.0f}")
-        cards[4].metric("iGBs uplift", f"{uplift:+.1%}")
-        cards[5].metric(
-            "iGBs / promo $",
-            f"{safe_ratio(incremental_gb, latest_redeemed):.2f}×"
-            if latest_redeemed
-            else "—",
+        cards[1].metric("Incremental trips", f"{incremental_trips:,.0f}")
+        cards[2].metric("Incremental GBs", f"${incremental_gb:,.0f}")
+        cards[3].metric("Incremental spend", f"${incremental_spend:,.0f}")
+        cards[4].metric(
+            "IGBS",
+            f"{igbs:.2f}" if igbs is not None else "n/a",
+            f"{igbs - IGBS_TARGET:+.2f} vs {IGBS_TARGET:.2f} target" if igbs is not None else None,
         )
+        if igbs is None:
+            st.warning(
+                "IGBS is not reported for this period: the treatment fare was not lower by more "
+                "than $0.50 per trip, so there is no incremental spend to divide by."
+            )
 
         breakdown = "country_name" if experiment_dimension == "Country" else "routes"
-        st.plotly_chart(
+        left, right = st.columns(2)
+        left.plotly_chart(
             metric_trend(
                 incrementality,
-                "iGBs",
+                "IGBS",
+                breakdown,
+                f"IGBS by {experiment_dimension.lower()}",
+            ),
+            use_container_width=True,
+        )
+        right.plotly_chart(
+            metric_trend(
+                incrementality,
+                "incremental_gb",
                 breakdown,
                 f"Incremental Gross Bookings by {experiment_dimension.lower()}",
             ),
@@ -615,16 +630,18 @@ elif page == "Experiment & iGBs":
             use_container_width=True,
             hide_index=True,
             column_config={
-                "iGBs_uplift": st.column_config.NumberColumn(format="percent"),
+                "IGBS": st.column_config.NumberColumn(format="%.2f"),
                 "treatment_conversion": st.column_config.NumberColumn(format="percent"),
                 "control_conversion": st.column_config.NumberColumn(format="percent"),
             },
         )
         csv_download(
             incrementality,
-            "Download iGBs calculation",
+            "Download IGBS calculation",
             f"intercity_igbs_{experiment_frequency.lower()}.csv",
         )
+
+        campaign = promo_metrics(promo_redemption, experiment_frequency)
 
         st.subheader("Campaign redemptions")
         if campaign.empty:

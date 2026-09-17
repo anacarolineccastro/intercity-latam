@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from src.metrics import (
     allocate_targets,
@@ -113,24 +114,48 @@ def test_weekly_target_is_monthly_divided_by_four():
     assert unchanged.iloc[0]["target"] == 400.0
 
 
-def test_igbs_scales_control_by_nine():
+def test_igbs_is_incremental_gb_over_incremental_spend():
     experiment = pd.DataFrame(
         {
             "week_start": pd.to_datetime(["2026-09-14", "2026-09-14"]),
             "country_name": ["Brazil", "Brazil"],
             "routes": ["A <> B", "A <> B"],
             "cohort": ["Treatment", "Control"],
-            "requests": [900, 100],
-            "trips": [700, 75],
-            "gb_usd": [10000, 1000],
+            "requests": [1000, 100],
+            "trips": [1000, 100],
+            "gb_usd": [9000, 1000],
             "NETR_usd": [2000, 200],
             "vc_usd": [1500, 150],
         }
     )
     result = experiment_metrics(experiment, "Week", "Route").iloc[0]
-    assert result["control_gb_scaled"] == 9000
-    assert result["iGBs"] == 1000
-    assert result["iGBs_uplift"] == 1000 / 9000
+    # Treatment averages $9.00 per trip against a $10.00 control fare.
+    assert result["control_trips_scaled"] == 900
+    assert result["incremental_trips"] == 100
+    assert result["incremental_gb"] == 900
+    assert result["gb_gap_per_trip"] == 1.0
+    assert result["incremental_spend"] == 900
+    assert result["IGBS"] == 1.0
+
+
+def test_igbs_is_not_reported_when_fare_gap_is_too_small():
+    experiment = pd.DataFrame(
+        {
+            "week_start": pd.to_datetime(["2026-09-14", "2026-09-14"]),
+            "country_name": ["Brazil", "Brazil"],
+            "routes": ["A <> B", "A <> B"],
+            "cohort": ["Treatment", "Control"],
+            "requests": [1000, 100],
+            "trips": [1000, 100],
+            "gb_usd": [9980, 1000],
+            "NETR_usd": [2000, 200],
+            "vc_usd": [1500, 150],
+        }
+    )
+    result = experiment_metrics(experiment, "Week", "Route").iloc[0]
+    assert result["gb_gap_per_trip"] == pytest.approx(0.02)
+    assert not result["is_valid_fare_cut"]
+    assert pd.isna(result["IGBS"])
 
 
 def test_promo_metrics_roll_up_to_month():

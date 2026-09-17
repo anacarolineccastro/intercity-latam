@@ -44,8 +44,8 @@ the newest uploaded version. Upload metadata and date coverage are recorded in
 - **Overview:** Requests, trips, conversion, gross bookings, variable
   contribution, VC margin, rider and NETR funnels, weekly/monthly marketplace
   health by country or route, and monthly actual-vs-plan.
-- **Experiment & iGBs:** Treatment/control performance, incremental Gross
-  Bookings, conversion, and promo-code redemptions.
+- **Experiment & IGBS:** Treatment/control performance, incremental Gross
+  Bookings and spend, IGBS versus target, and promo-code redemptions.
 - **Routes:** Ranked route volume, conversion, finance, distance, and exports.
 - **Reserve:** Completion, reliability, booking lead time, trends, and details.
 - **Supply & return:** Return rate, time to return, and no-attempt measures.
@@ -77,11 +77,22 @@ route-level target comparisons are therefore not shown. Weekly targets are the
 monthly target divided by 4 and assigned to each week in that month. The overview
 reports actual, target, absolute gap, attainment, and percentage versus target.
 
-The experiment uses the fixed Bullseye 90/10 assignment:
+IGBS is Incremental Gross Bookings over Incremental Spend, following the
+company definition. The Bullseye workflow assigns 90% Treatment and 10%
+Control, so the control arm is scaled by 9 before comparison:
 
-`iGBs = Treatment GB − (9 × Control GB)`
+```
+scaled control trips = control trips × 9
+incremental trips    = treatment trips − scaled control trips
+incremental GBs      = incremental trips × avg GB per treatment trip
+incremental spend    = scaled control trips × (avg GB control − avg GB treatment)
+IGBS                 = incremental GBs / incremental spend
+```
 
-`iGBs uplift = iGBs / (9 × Control GB)`
+Higher is better, and 1.65 is the historical target. Following the fare-cut
+methodology, IGBS is reported only when the treatment fare is actually lower
+and the gap exceeds $0.50 per trip; otherwise the value is blank because there
+is no incremental spend to divide by.
 
 Promo spend is aligned by period in aggregate because the promo query has no
 country, route, or cohort dimensions.

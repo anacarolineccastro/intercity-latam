@@ -108,8 +108,13 @@ def allocate_targets(monthly: pd.DataFrame, frequency: str) -> pd.DataFrame:
     return allocated
 
 
+CONTROL_SCALE = 9.0
+MIN_GB_GAP_PER_TRIP = 0.50
+IGBS_TARGET = 1.65
+
+
 def experiment_metrics(frame: pd.DataFrame, frequency: str, dimension: str) -> pd.DataFrame:
-    """Calculate 90/10 experiment incrementality at period and geography grain."""
+    """Calculate IGBS for the 90/10 experiment at period and geography grain."""
     if frame.empty:
         return pd.DataFrame()
     dimensions = ["country_name"] if dimension == "Country" else ["country_name", "routes"]
@@ -134,11 +139,25 @@ def experiment_metrics(frame: pd.DataFrame, frequency: str, dimension: str) -> p
             column = f"{metric}_{cohort}"
             if column not in result:
                 result[column] = 0.0
-    result["control_gb_scaled"] = result["gb_usd_control"] * 9.0
-    result["iGBs"] = result["gb_usd_treatment"] - result["control_gb_scaled"]
-    result["iGBs_uplift"] = result.apply(
-        lambda row: safe_ratio(row["iGBs"], row["control_gb_scaled"]), axis=1
+    result["avg_gb_treatment"] = result.apply(
+        lambda row: safe_ratio(row["gb_usd_treatment"], row["trips_treatment"]), axis=1
     )
+    result["avg_gb_control"] = result.apply(
+        lambda row: safe_ratio(row["gb_usd_control"], row["trips_control"]), axis=1
+    )
+    result["control_trips_scaled"] = result["trips_control"] * CONTROL_SCALE
+    result["incremental_trips"] = result["trips_treatment"] - result["control_trips_scaled"]
+    result["incremental_gb"] = result["incremental_trips"] * result["avg_gb_treatment"]
+    result["gb_gap_per_trip"] = result["avg_gb_control"] - result["avg_gb_treatment"]
+    result["incremental_spend"] = result["control_trips_scaled"] * result["gb_gap_per_trip"]
+    result["is_valid_fare_cut"] = result["gb_gap_per_trip"] > MIN_GB_GAP_PER_TRIP
+    result["IGBS"] = result.apply(
+        lambda row: safe_ratio(row["incremental_gb"], row["incremental_spend"])
+        if row["is_valid_fare_cut"]
+        else float("nan"),
+        axis=1,
+    )
+    result["meets_target"] = result["IGBS"] >= IGBS_TARGET
     result["treatment_conversion"] = result.apply(
         lambda row: safe_ratio(row["trips_treatment"], row["requests_treatment"]), axis=1
     )
