@@ -380,39 +380,21 @@ if page == "Overview":
         column.metric(label, fmt.format(value), f"{delta:+.1%} WoW" if delta is not None else None)
 
     st.subheader("Conversion and NETR funnels")
-    session_totals = (
-        totals(sessions, ["sessions", "shopping_sessions", "requesting_sessions"])
-        if not sessions.empty
-        else {}
-    )
-    left, right = st.columns(2)
-    if session_totals:
-        left.plotly_chart(
-            funnel(
-                {
-                    "Sessions": session_totals["sessions"],
-                    "Shopping": session_totals["shopping_sessions"],
-                    "Requesting": session_totals["requesting_sessions"],
-                },
-                "Session funnel",
-            ),
-            use_container_width=True,
-        )
+    funnel_values = {}
+    if not sessions.empty:
+        session_totals = totals(sessions, ["sessions", "shopping_sessions"])
+        funnel_values.update({
+            "Sessions": session_totals["sessions"],
+            "Shopping": session_totals["shopping_sessions"],
+        })
     if summary:
-        right.plotly_chart(
-            funnel({"Requests": summary["requests"], "Trips": summary["trips"]}, "Request funnel"),
-            use_container_width=True,
-        )
-    if session_totals and summary:
-        st.caption(
-            "Requests per requesting session: "
-            f"{safe_ratio(summary['requests'], session_totals['requesting_sessions']):.2f}. "
-            "Requesting sessions count sessions with at least one request, so requests are "
-            "expected to exceed them."
-        )
+        funnel_values.update({"Requests": summary["requests"], "Trips": summary["trips"]})
+    left, right = st.columns(2)
+    if funnel_values:
+        left.plotly_chart(funnel(funnel_values), use_container_width=True)
     if not finance.empty:
-        st.plotly_chart(netr_waterfall(netr_bridge(finance)), use_container_width=True)
-        st.caption(
+        right.plotly_chart(netr_waterfall(netr_bridge(finance)), use_container_width=True)
+        right.caption(
             "NETR = Gross Bookings − Driver Payments − Taxes & Fees − Existing User Incentives."
         )
 
