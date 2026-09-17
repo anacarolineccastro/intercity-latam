@@ -1,6 +1,15 @@
 import pandas as pd
 
-from src.metrics import allocate_targets, filter_frame, finance_summary, marketplace_metrics, netr_bridge, safe_ratio
+from src.metrics import (
+    allocate_targets,
+    experiment_metrics,
+    filter_frame,
+    finance_summary,
+    marketplace_metrics,
+    netr_bridge,
+    promo_metrics,
+    safe_ratio,
+)
 
 
 def test_safe_ratio_handles_zero():
@@ -102,3 +111,37 @@ def test_weekly_target_is_monthly_divided_by_four():
     assert "month" in weekly
     unchanged = allocate_targets(monthly, "Month")
     assert unchanged.iloc[0]["target"] == 400.0
+
+
+def test_igbs_scales_control_by_nine():
+    experiment = pd.DataFrame(
+        {
+            "week_start": pd.to_datetime(["2026-09-14", "2026-09-14"]),
+            "country_name": ["Brazil", "Brazil"],
+            "routes": ["A <> B", "A <> B"],
+            "cohort": ["Treatment", "Control"],
+            "requests": [900, 100],
+            "trips": [700, 75],
+            "gb_usd": [10000, 1000],
+            "NETR_usd": [2000, 200],
+            "vc_usd": [1500, 150],
+        }
+    )
+    result = experiment_metrics(experiment, "Week", "Route").iloc[0]
+    assert result["control_gb_scaled"] == 9000
+    assert result["iGBs"] == 1000
+    assert result["iGBs_uplift"] == 1000 / 9000
+
+
+def test_promo_metrics_roll_up_to_month():
+    promos = pd.DataFrame(
+        {
+            "week_start": pd.to_datetime(["2026-09-07", "2026-09-14"]),
+            "promotion_code": ["PROMO", "PROMO"],
+            "redeemed_usd": [100, 150],
+            "trips_redeemed": [10, 15],
+        }
+    )
+    result = promo_metrics(promos, "Month")
+    assert len(result) == 1
+    assert result.iloc[0]["redeemed_usd"] == 250

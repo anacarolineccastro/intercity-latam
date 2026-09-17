@@ -30,6 +30,11 @@ compact template or the original Planning spreadsheet export containing
 `3. Country Lookup`, `Metric`, and `YYYY-MM` columns. Uploading a target file
 replaces the current target; no manual reformatting is required.
 
+The **Experiment** uploader accepts the tagged-rider Finance query output with
+`cohort` equal to Treatment or Control. The **Promo Redemption** uploader
+accepts `month`, `promotion_code`, `redeemed_usd`, and `trips_redeemed`.
+They remain separate from core Finance to prevent double-counting.
+
 Append mode de-duplicates rows at each dataset's natural weekly grain, keeping
 the newest uploaded version. Upload metadata and date coverage are recorded in
 `data/stored/manifest.json`.
@@ -39,6 +44,8 @@ the newest uploaded version. Upload metadata and date coverage are recorded in
 - **Overview:** Requests, trips, conversion, gross bookings, variable
   contribution, VC margin, rider and NETR funnels, weekly/monthly marketplace
   health by country or route, and monthly actual-vs-plan.
+- **Experiment & iGBs:** Treatment/control performance, incremental Gross
+  Bookings, conversion, and promo-code redemptions.
 - **Routes:** Ranked route volume, conversion, finance, distance, and exports.
 - **Reserve:** Completion, reliability, booking lead time, trends, and details.
 - **Supply & return:** Return rate, time to return, and no-attempt measures.
@@ -69,6 +76,15 @@ used until a replacement is uploaded. Targets are country-level and monthly;
 route-level target comparisons are therefore not shown. Weekly targets are the
 monthly target divided by 4 and assigned to each week in that month. The overview
 reports actual, target, absolute gap, attainment, and percentage versus target.
+
+The experiment uses the fixed Bullseye 90/10 assignment:
+
+`iGBs = Treatment GB − (9 × Control GB)`
+
+`iGBs uplift = iGBs / (9 × Control GB)`
+
+Promo spend is aligned by period in aggregate because the promo query has no
+country, route, or cohort dimensions.
 
 ## Input contracts
 

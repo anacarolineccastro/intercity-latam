@@ -25,6 +25,8 @@ from src.metrics import (
     marketplace_metrics,
     netr_bridge,
     allocate_targets,
+    experiment_metrics,
+    promo_metrics,
     route_summary,
     safe_ratio,
     totals,
@@ -289,7 +291,8 @@ def get_data() -> tuple[dict[str, pd.DataFrame], dict]:
 with st.sidebar:
     st.header("Navigation")
     page = st.radio(
-        "Page", ["Overview", "Routes", "Finance", "Reserve", "Supply & return", "Data refresh"]
+        "Page",
+        ["Overview", "Experiment & iGBs", "Routes", "Finance", "Reserve", "Supply & return", "Data refresh"],
     )
     sidebar_frames, _ = load_all(ROOT)
     loaded_names = [name.replace("_", " ").title() for name in DATASETS if name in sidebar_frames]
@@ -356,6 +359,8 @@ finance = filtered.get("finance", pd.DataFrame())
 sessions = filtered.get("sessions", pd.DataFrame())
 reserve = filtered.get("reserve_rate", pd.DataFrame())
 returns = filtered.get("return_rate", pd.DataFrame())
+experiment = filtered.get("experiment", pd.DataFrame())
+promo_redemption = filtered.get("promo_redemption", pd.DataFrame())
 
 if page == "Overview":
     st.subheader("Executive overview")
@@ -540,6 +545,115 @@ if page == "Overview":
         st.info("Upload Finance data to compare actuals with the target.")
     if not finance.empty:
         csv_download(finance, "Download filtered overview data", "latam_intercity_overview.csv")
+
+elif page == "Experiment & iGBs":
+    st.subheader("Intercity experiment incrementality")
+    st.caption(
+        "The Bullseye workflow assigns 90% Treatment and 10% Control. "
+        "iGBs = Treatment Gross Bookings − (9 × Control Gross Bookings)."
+    )
+    if experiment.empty:
+        st.info("Upload the **Experiment** cohort Finance export in Data refresh to calculate iGBs.")
+    elif not {"Treatment", "Control"}.issubset(
+        set(experiment["cohort"].astype(str).str.strip().str.title())
+    ):
+        st.error("The Experiment export must contain both Treatment and Control cohort rows.")
+    else:
+        control_a, control_b = st.columns(2)
+        experiment_frequency = control_a.radio(
+            "Time grain", ["Week", "Month"], horizontal=True, key="experiment-frequency"
+        )
+        experiment_dimension = control_b.radio(
+            "Break down by", ["Country", "Route"], horizontal=True, key="experiment-dimension"
+        )
+        incrementality = experiment_metrics(
+            experiment, experiment_frequency, experiment_dimension
+        )
+        latest_period = incrementality["period"].max()
+        latest_rows = incrementality[incrementality["period"] == latest_period]
+        treatment_gb = latest_rows["gb_usd_treatment"].sum()
+        scaled_control_gb = latest_rows["control_gb_scaled"].sum()
+        incremental_gb = latest_rows["iGBs"].sum()
+        uplift = safe_ratio(incremental_gb, scaled_control_gb)
+
+        campaign = promo_metrics(promo_redemption, experiment_frequency)
+        latest_redeemed = (
+            campaign.loc[campaign["period"] == latest_period, "redeemed_usd"].sum()
+            if not campaign.empty
+            else 0
+        )
+        cards = st.columns(6)
+        cards[0].metric(
+            "Latest period",
+            latest_period.strftime("%d %b %Y")
+            if experiment_frequency == "Week"
+            else latest_period.strftime("%b %Y"),
+        )
+        cards[1].metric("Treatment GB", f"${treatment_gb:,.0f}")
+        cards[2].metric("9× Control GB", f"${scaled_control_gb:,.0f}")
+        cards[3].metric("iGBs", f"${incremental_gb:,.0f}")
+        cards[4].metric("iGBs uplift", f"{uplift:+.1%}")
+        cards[5].metric(
+            "iGBs / promo $",
+            f"{safe_ratio(incremental_gb, latest_redeemed):.2f}×"
+            if latest_redeemed
+            else "—",
+        )
+
+        breakdown = "country_name" if experiment_dimension == "Country" else "routes"
+        st.plotly_chart(
+            metric_trend(
+                incrementality,
+                "iGBs",
+                breakdown,
+                f"Incremental Gross Bookings by {experiment_dimension.lower()}",
+            ),
+            use_container_width=True,
+        )
+        st.dataframe(
+            incrementality,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "iGBs_uplift": st.column_config.NumberColumn(format="percent"),
+                "treatment_conversion": st.column_config.NumberColumn(format="percent"),
+                "control_conversion": st.column_config.NumberColumn(format="percent"),
+            },
+        )
+        csv_download(
+            incrementality,
+            "Download iGBs calculation",
+            f"intercity_igbs_{experiment_frequency.lower()}.csv",
+        )
+
+        st.subheader("Campaign redemptions")
+        if campaign.empty:
+            st.info("Upload the **Promo Redemption** export to add campaign spend and redemption metrics.")
+        else:
+            campaign_totals = campaign.groupby("period", as_index=False)[
+                ["redeemed_usd", "trips_redeemed"]
+            ].sum()
+            left, right = st.columns(2)
+            left.plotly_chart(
+                metric_trend(
+                    campaign_totals.assign(series="All promo codes"),
+                    "redeemed_usd",
+                    "series",
+                    "Promo redeemed (USD)",
+                ),
+                use_container_width=True,
+            )
+            right.plotly_chart(
+                metric_trend(
+                    campaign,
+                    "redeemed_usd",
+                    "promotion_code",
+                    "Promo redeemed by code",
+                ),
+                use_container_width=True,
+            )
+            st.dataframe(campaign, use_container_width=True, hide_index=True)
+            csv_download(campaign, "Download promo redemptions", "intercity_promo_redemptions.csv")
 
 elif page == "Routes":
     st.subheader("Route performance")

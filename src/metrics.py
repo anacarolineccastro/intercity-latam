@@ -108,6 +108,60 @@ def allocate_targets(monthly: pd.DataFrame, frequency: str) -> pd.DataFrame:
     return allocated
 
 
+def experiment_metrics(frame: pd.DataFrame, frequency: str, dimension: str) -> pd.DataFrame:
+    """Calculate 90/10 experiment incrementality at period and geography grain."""
+    if frame.empty:
+        return pd.DataFrame()
+    dimensions = ["country_name"] if dimension == "Country" else ["country_name", "routes"]
+    data = frame.copy()
+    data["period"] = pd.to_datetime(data["week_start"])
+    if frequency == "Month":
+        data["period"] = data["period"].dt.to_period("M").dt.to_timestamp()
+    data["cohort"] = data["cohort"].astype(str).str.strip().str.title()
+    values = [column for column in ["requests", "trips", "gb_usd", "NETR_usd", "vc_usd"] if column in data]
+    grouped = data.groupby([*dimensions, "period", "cohort"], as_index=False)[values].sum()
+    pivoted = grouped.pivot_table(
+        index=[*dimensions, "period"],
+        columns="cohort",
+        values=values,
+        aggfunc="sum",
+        fill_value=0,
+    )
+    pivoted.columns = [f"{metric}_{cohort.lower()}" for metric, cohort in pivoted.columns]
+    result = pivoted.reset_index()
+    for metric in values:
+        for cohort in ("treatment", "control"):
+            column = f"{metric}_{cohort}"
+            if column not in result:
+                result[column] = 0.0
+    result["control_gb_scaled"] = result["gb_usd_control"] * 9.0
+    result["iGBs"] = result["gb_usd_treatment"] - result["control_gb_scaled"]
+    result["iGBs_uplift"] = result.apply(
+        lambda row: safe_ratio(row["iGBs"], row["control_gb_scaled"]), axis=1
+    )
+    result["treatment_conversion"] = result.apply(
+        lambda row: safe_ratio(row["trips_treatment"], row["requests_treatment"]), axis=1
+    )
+    result["control_conversion"] = result.apply(
+        lambda row: safe_ratio(row["trips_control"], row["requests_control"]), axis=1
+    )
+    return result.sort_values([*dimensions, "period"])
+
+
+def promo_metrics(frame: pd.DataFrame, frequency: str) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame()
+    data = frame.copy()
+    data["period"] = pd.to_datetime(data["week_start"])
+    if frequency == "Month":
+        data["period"] = data["period"].dt.to_period("M").dt.to_timestamp()
+    return (
+        data.groupby(["period", "promotion_code"], as_index=False)[["redeemed_usd", "trips_redeemed"]]
+        .sum()
+        .sort_values(["period", "promotion_code"])
+    )
+
+
 def netr_bridge(frame: pd.DataFrame) -> dict[str, float]:
     values = totals(
         frame,

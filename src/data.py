@@ -38,6 +38,30 @@ DATASETS = {
         "numeric": ["sessions", "requesting_sessions", "shopping_sessions"],
         "keys": ["week_start", "country_name", "routes"],
     },
+    "experiment": {
+        "week": "month",
+        "required": [
+            "month", "country_name", "routes", "cohort", "requests", "trips",
+            "gb_usd", "vc_usd", "NETR_usd",
+        ],
+        "numeric": [
+            "requests", "trips", "gb_usd", "vc_usd", "NETR_usd",
+            "driver_payment_usd", "ri_usd", "net_ufp_usd",
+            "net_subscriber_discounts_usd", "existing_driver_incentives_usd",
+            "taxes_and_fees_disbursed_usd", "total_trip_distance_km",
+            "total_eta_min", "promo_redeemed_ri", "high_promo_requests",
+        ],
+        "keys": [
+            "week_start", "country_name", "routes", "is_reserve",
+            "car_type", "airport_type", "cohort",
+        ],
+    },
+    "promo_redemption": {
+        "week": "month",
+        "required": ["month", "promotion_code", "redeemed_usd", "trips_redeemed"],
+        "numeric": ["redeemed_usd", "trips_redeemed"],
+        "keys": ["week_start", "promotion_code"],
+    },
 }
 
 
