@@ -23,9 +23,9 @@ def route_bar(frame: pd.DataFrame, value: str, title: str):
     ).update_layout(margin=dict(l=8, r=8, t=42, b=8), legend_title_text="")
 
 
-def funnel(values: dict[str, float]):
+def funnel(values: dict[str, float], title: str = "Intercity funnel"):
     frame = pd.DataFrame({"stage": list(values), "count": list(values.values())})
-    return px.funnel(frame, y="stage", x="count", title="Intercity funnel").update_layout(
+    return px.funnel(frame, y="stage", x="count", title=title).update_layout(
         margin=dict(l=8, r=8, t=42, b=8)
     )
 

@@ -67,9 +67,9 @@ def route_bar(frame: pd.DataFrame, value: str, title: str):
     ).update_layout(margin=dict(l=8, r=8, t=42, b=8), legend_title_text="")
 
 
-def funnel(values: dict[str, float]):
+def funnel(values: dict[str, float], title: str = "Intercity funnel"):
     frame = pd.DataFrame({"stage": list(values), "count": list(values.values())})
-    return px.funnel(frame, y="stage", x="count", title="Intercity funnel").update_layout(
+    return px.funnel(frame, y="stage", x="count", title=title).update_layout(
         margin=dict(l=8, r=8, t=42, b=8)
     )
 
@@ -380,22 +380,39 @@ if page == "Overview":
         column.metric(label, fmt.format(value), f"{delta:+.1%} WoW" if delta is not None else None)
 
     st.subheader("Conversion and NETR funnels")
-    funnel_values = {}
-    if not sessions.empty:
-        session_totals = totals(sessions, ["sessions", "shopping_sessions", "requesting_sessions"])
-        funnel_values.update({
-            "Sessions": session_totals["sessions"],
-            "Shopping": session_totals["shopping_sessions"],
-            "Requesting": session_totals["requesting_sessions"],
-        })
-    if summary:
-        funnel_values.update({"Requests": summary["requests"], "Trips": summary["trips"]})
+    session_totals = (
+        totals(sessions, ["sessions", "shopping_sessions", "requesting_sessions"])
+        if not sessions.empty
+        else {}
+    )
     left, right = st.columns(2)
-    if funnel_values:
-        left.plotly_chart(funnel(funnel_values), use_container_width=True)
+    if session_totals:
+        left.plotly_chart(
+            funnel(
+                {
+                    "Sessions": session_totals["sessions"],
+                    "Shopping": session_totals["shopping_sessions"],
+                    "Requesting": session_totals["requesting_sessions"],
+                },
+                "Session funnel",
+            ),
+            use_container_width=True,
+        )
+    if summary:
+        right.plotly_chart(
+            funnel({"Requests": summary["requests"], "Trips": summary["trips"]}, "Request funnel"),
+            use_container_width=True,
+        )
+    if session_totals and summary:
+        st.caption(
+            "Requests per requesting session: "
+            f"{safe_ratio(summary['requests'], session_totals['requesting_sessions']):.2f}. "
+            "Requesting sessions count sessions with at least one request, so requests are "
+            "expected to exceed them."
+        )
     if not finance.empty:
-        right.plotly_chart(netr_waterfall(netr_bridge(finance)), use_container_width=True)
-        right.caption(
+        st.plotly_chart(netr_waterfall(netr_bridge(finance)), use_container_width=True)
+        st.caption(
             "NETR = Gross Bookings − Driver Payments − Taxes & Fees − Existing User Incentives."
         )
 
