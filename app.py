@@ -284,6 +284,86 @@ def show_uploads() -> None:
                 st.error(f"Target data was not saved: {error}")
 
 
+def show_readme() -> None:
+    st.subheader("Read me")
+    st.markdown(
+        """
+This dashboard reports weekly Brazil and Mexico Intercity performance from
+Finance, Sessions, Reserve Rate, and Return Rate query exports. Experiment
+cohorts and promo redemptions are stored separately so they never mix into
+core marketplace totals.
+
+### How to refresh data
+1. Export the queries as CSV or XLSX.
+2. Open **Data refresh**.
+3. Download a template if you need to check the expected columns.
+4. Upload each file and review the row count, date coverage, and preview.
+5. Choose **append** to add or update weeks, or **replace** to overwrite that
+   dataset.
+6. Save. The app keeps the newest row at each dataset's natural weekly grain.
+
+Monthly targets can be uploaded on the same page, either from the compact
+template or from the Planning export (`3. Country Lookup`, `Metric`, `YYYY-MM`).
+A new target file replaces the previous one.
+
+### Pages
+- **Overview:** Requests, trips, conversion, Gross Bookings, VC, funnels,
+  marketplace health by week or month, and actual vs target.
+- **Experiment & IGBS:** Treatment vs Control incrementality and promo spend.
+- **Routes / Finance / Reserve / Supply & return:** Detail views and CSV
+  downloads of the filtered data.
+
+Sidebar filters apply to every reporting page. **Data refresh** and **Read me**
+are unfiltered so you can always upload files or open this guide.
+
+### Marketplace metrics
+Ratios are calculated after summing additive fields. Zero denominators stay
+blank instead of erroring.
+
+- **Rs/S** = requesting sessions / shopping sessions
+- **C/Rs** = completed trips / requesting sessions
+- **C/S** = completed trips / shopping sessions
+- **C/R** = completed trips / requests
+- **Average Fare** = Gross Bookings / completed trips
+- **NETR Margin** = NETR / Gross Bookings
+- **VC Margin** = Variable Contribution / Gross Bookings
+- **Return Rate** = return trips / onward trips
+
+The conversion funnel is Sessions → Shopping → Requests → Trips. Requesting
+sessions are kept for Rs/S and C/Rs, but they are not a funnel stage because
+they count sessions while Requests count request events.
+
+Intercity is BTD-only. The dashboard does not attribute performance to Rider
+Surge, Driver Surge, DOP, RSP, or CSP.
+
+The NETR waterfall is Gross Bookings minus driver payments, taxes and fees,
+and existing user incentives.
+
+Targets are country-level and monthly. Weekly targets are the monthly value
+divided by 4. Route-level target comparison is not shown.
+
+### IGBS
+IGBS is Incremental Gross Bookings over Incremental Spend. The experiment is
+90% Treatment / 10% Control, so Control is scaled by 9:
+
+```
+scaled control trips = control trips × 9
+incremental trips    = treatment trips − scaled control trips
+incremental GBs      = incremental trips × avg GB per treatment trip
+incremental spend    = scaled control trips × (avg GB control − avg GB treatment)
+IGBS                 = incremental GBs / incremental spend
+```
+
+Average fare is Gross Bookings / trips. Higher IGBS is better; **1.65** is the
+historical target. IGBS is only reported when the treatment fare is lower by
+more than **$0.50** per trip.
+
+Promo redemptions are aligned by period in aggregate because that query has no
+country, route, or cohort dimensions.
+"""
+    )
+
+
 @st.cache_data(show_spinner=False)
 def get_data() -> tuple[dict[str, pd.DataFrame], dict]:
     return load_all(ROOT)
@@ -293,7 +373,16 @@ with st.sidebar:
     st.header("Navigation")
     page = st.radio(
         "Page",
-        ["Overview", "Experiment & IGBS", "Routes", "Finance", "Reserve", "Supply & return", "Data refresh"],
+        [
+            "Overview",
+            "Experiment & IGBS",
+            "Routes",
+            "Finance",
+            "Reserve",
+            "Supply & return",
+            "Data refresh",
+            "Read me",
+        ],
     )
     sidebar_frames, _ = load_all(ROOT)
     loaded_names = [name.replace("_", " ").title() for name in DATASETS if name in sidebar_frames]
@@ -305,6 +394,10 @@ with st.sidebar:
 
 if page == "Data refresh":
     show_uploads()
+    st.stop()
+
+if page == "Read me":
+    show_readme()
     st.stop()
 
 frames, manifest = get_data()
